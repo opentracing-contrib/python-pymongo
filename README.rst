@@ -1,6 +1,6 @@
-#################
+###################
 PyMongo OpenTracing
-#################
+###################
 
 This package enables tracing `Mongo`_ commands in a `PyMongo`_ ``MongoClient`` via `The OpenTracing Project`_. 
 Once a production system contends with real concurrency or splits into many services, crucial (and
@@ -29,7 +29,7 @@ Run the following command:
 
 .. code-block:: 
 
-    $ git clone https://github.com/signalfx/python-pymongo.git && pip install ./python-pymongo
+    $ pip install pymongo-opentracing
 
 Usage
 =====
