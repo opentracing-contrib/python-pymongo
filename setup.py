@@ -31,7 +31,7 @@ integration_test_requirements = ['docker']
 
 setup(
     name='PyMongo-OpenTracing',
-    version='0.0.1',
+    version='0.0.2',
     url='http://github.com/signalfx/python-pymongo',
     download_url='http://github.com/signalfx/python-pymongo/tarball/master',
     author='SignalFx, Inc.',
