@@ -18,20 +18,22 @@ import json
 from pymongo_opentracing import CommandTracing
 
 
-@pytest.fixture(scope='session')
-def mongo_container():
-    client = docker.from_env()
-    mongo = client.containers.run('mongo:latest', ports={'27017/tcp': 27017}, detach=True)
-    try:
-        yield mongo
-    finally:
-        mongo.remove(force=True, v=True)
-
-
-class TestCommandTracing(object):
+class MongoTest(object):
 
     _min = int('0x2700', 16)
     _max = int('0x27bf', 16)
+
+    uri = 'mongodb://localhost'
+    env = {}
+
+    @pytest.fixture(scope='class')
+    def mongo_container(self):
+        client = docker.from_env()
+        mongo = client.containers.run('mongo:latest', ports={'27017/tcp': 27017}, detach=True, environment=self.env)
+        try:
+            yield mongo
+        finally:
+            mongo.remove(force=True, v=True)
 
     def random_string(self):
         """Returns a valid unicode field name"""
@@ -48,7 +50,7 @@ class TestCommandTracing(object):
     @pytest.fixture
     def command_tracing(self, mongo_container):
         tracer = MockTracer()
-        client = MongoClient(event_listeners=[CommandTracing(tracer, span_tags=dict(custom='tag'))])
+        client = MongoClient(self.uri, event_listeners=[CommandTracing(tracer, span_tags=dict(custom='tag'))])
         return tracer, client
 
     @pytest.fixture
@@ -58,6 +60,9 @@ class TestCommandTracing(object):
     @pytest.fixture
     def client(self, command_tracing):
         return command_tracing[1]
+
+
+class TestCommandTracing(MongoTest):
 
     def test_successful_insert_many(self, tracer, client):
         db_name = self.random_string()
@@ -73,6 +78,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'insert'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         assert span.tags['event.reply']
         assert tags.ERROR not in span.tags
@@ -98,6 +104,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'insert'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         assert span.tags[tags.ERROR] is True
         expected_failure = dict(code=2, codeName='BadValue', ok=0.0,
@@ -122,6 +129,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'find'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         assert span.tags['event.reply']
         assert tags.ERROR not in span.tags
@@ -144,6 +152,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'find'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         assert tags.ERROR not in span.tags
         assert 'event.failure' not in span.tags
@@ -159,6 +168,7 @@ class TestCommandTracing(object):
             assert span.tags['custom'] == 'tag'
             assert span.tags['command.name'] == 'getMore'
             assert span.tags[tags.COMPONENT] == 'PyMongo'
+            assert span.tags[tags.DATABASE_INSTANCE] == db_name
             assert span.tags['reported_duration']
             cursor = json_util.loads(span.tags['event.reply'])['cursor']
             batch = docs[i * 2:i * 2 + 2] if i * 2 < len(docs) else []
@@ -182,6 +192,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'aggregate'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         cursor = json_util.loads(span.tags['event.reply'])['cursor']
         assert cursor['firstBatch'] == [dict(count=3, _id=3),
@@ -221,6 +232,7 @@ class TestCommandTracing(object):
         assert mr_span.tags['custom'] == 'tag'
         assert mr_span.tags['command.name'] == 'mapreduce'
         assert mr_span.tags[tags.COMPONENT] == 'PyMongo'
+        assert mr_span.tags[tags.DATABASE_INSTANCE] == db_name
         assert mr_span.tags['reported_duration']
         assert tags.ERROR not in mr_span.tags
         assert 'event.failure' not in mr_span.tags
@@ -234,6 +246,7 @@ class TestCommandTracing(object):
         assert f_span.tags['custom'] == 'tag'
         assert f_span.tags['command.name'] == 'find'
         assert f_span.tags[tags.COMPONENT] == 'PyMongo'
+        assert f_span.tags[tags.DATABASE_INSTANCE] == db_name
         assert f_span.tags['reported_duration']
         cursor = json_util.loads(f_span.tags['event.reply'])['cursor']
         assert cursor['firstBatch'] == [dict(_id=1.0, value=1.0), dict(_id=2.0, value=2.0)]
@@ -245,6 +258,7 @@ class TestCommandTracing(object):
         assert n_span.tags['custom'] == 'tag'
         assert n_span.tags['command.name'] == 'getMore'
         assert n_span.tags[tags.COMPONENT] == 'PyMongo'
+        assert n_span.tags[tags.DATABASE_INSTANCE] == db_name
         assert n_span.tags['reported_duration']
         cursor = json_util.loads(n_span.tags['event.reply'])['cursor']
         assert cursor['nextBatch'] == [dict(_id=3.0, value=3.0)]
@@ -276,6 +290,7 @@ class TestCommandTracing(object):
         assert span.tags['custom'] == 'tag'
         assert span.tags['command.name'] == 'mapreduce'
         assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
         assert span.tags['reported_duration']
         assert span.tags[tags.ERROR] is True
 
@@ -284,3 +299,66 @@ class TestCommandTracing(object):
         assert failure['codeName'] == 'JSInterpreterFailure'
         assert failure['ok'] == 0.0
         assert 'Error: Bomb!' in failure['errmsg']
+
+
+class TestAuthenticatedCommandTracing(MongoTest):
+
+    uri = 'mongodb://username:password@localhost'
+    env = dict(MONGO_INITDB_ROOT_USERNAME='username',
+               MONGO_INITDB_ROOT_PASSWORD='password')
+
+    def test_successful_insert_many(self, tracer, client):
+        db_name = self.random_string()
+        collection_name = self.random_string()
+        collection = client[db_name][collection_name]
+        docs = [{self.random_string(): self.random_string() for _ in range(5)} for __ in range(5)]
+        collection.insert_many(docs)
+
+        spans = tracer.finished_spans()
+        assert len(spans) == 4
+
+        assert [s.operation_name for s in spans[:3]] == ['saslStart', 'saslContinue', 'saslContinue']
+        for span in spans[:3]:
+            assert span.tags['custom'] == 'tag'
+            assert 'command.name' not in span.tags
+            assert span.tags[tags.COMPONENT] == 'PyMongo'
+            assert span.tags[tags.DATABASE_INSTANCE] == 'admin'
+            assert span.tags['reported_duration']
+            assert span.tags['event.reply']
+            assert tags.ERROR not in span.tags
+            assert 'event.failure' not in span.tags
+
+        span = spans[-1]
+        assert span.operation_name == 'insert'
+        assert span.tags['namespace'] == self.namespace(db_name, collection_name)
+        assert span.tags['custom'] == 'tag'
+        assert span.tags['command.name'] == 'insert'
+        assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
+        assert span.tags['reported_duration']
+        assert span.tags['event.reply']
+        assert tags.ERROR not in span.tags
+        assert 'event.failure' not in span.tags
+
+    def test_successful_find_one(self, tracer, client):
+        db_name = self.random_string()
+        collection_name = self.random_string()
+        collection = client[db_name][collection_name]
+        docs = [{self.random_string(): self.random_string() for _ in range(5)} for __ in range(5)]
+        collection.insert_many(docs)
+        tracer.reset()
+
+        list(collection.find(docs[3]))
+        spans = tracer.finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.operation_name == 'find'
+        assert span.tags['namespace'] == self.namespace(db_name, collection_name)
+        assert span.tags['custom'] == 'tag'
+        assert span.tags['command.name'] == 'find'
+        assert span.tags[tags.COMPONENT] == 'PyMongo'
+        assert span.tags[tags.DATABASE_INSTANCE] == db_name
+        assert span.tags['reported_duration']
+        assert span.tags['event.reply']
+        assert tags.ERROR not in span.tags
+        assert 'event.failure' not in span.tags
