@@ -18,10 +18,16 @@ class CommandTracing(pymongo.monitoring.CommandListener):
         scope = self._tracer.start_active_span(event.command_name)
         self._scopes[event.request_id] = scope
         span = scope.span
+
         span.set_tag(tags.DATABASE_TYPE, 'mongodb')
         span.set_tag(tags.COMPONENT, 'PyMongo')
+        span.set_tag(tags.DATABASE_INSTANCE, event.database_name)
         for tag, value in self._span_tags.items():
             span.set_tag(tag, value)
+
+        if not event.command:
+            return
+
         command_name, collection = next(iter(event.command.items()))
         span.set_tag('command.name', command_name)
         namespace = text_type('{}.{}').format(event.database_name, collection)
