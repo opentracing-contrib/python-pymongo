@@ -1,5 +1,6 @@
 # Copyright (C) 2018 SignalFx, Inc. All rights reserved.
 from random import randint
+import socket
 
 from opentracing.mocktracer import MockTracer
 from pymongo.errors import OperationFailure
@@ -18,6 +19,22 @@ import json
 from pymongo_opentracing import CommandTracing
 
 
+port = None
+
+
+def random_port():
+    global port
+    if port is None:
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.bind(('', 0))
+        addr = tcp.getsockname()
+        tcp.close()
+        port = addr[1]
+
+
+random_port()
+
+
 class MongoTest(object):
 
     _min = int('0x2700', 16)
@@ -29,7 +46,7 @@ class MongoTest(object):
     @pytest.fixture(scope='class')
     def mongo_container(self):
         client = docker.from_env()
-        mongo = client.containers.run('mongo:latest', ports={'27017/tcp': 27017}, detach=True, environment=self.env)
+        mongo = client.containers.run('mongo:latest', ports={'27017/tcp': port}, detach=True, environment=self.env)
         try:
             yield mongo
         finally:
@@ -50,7 +67,8 @@ class MongoTest(object):
     @pytest.fixture
     def command_tracing(self, mongo_container):
         tracer = MockTracer()
-        client = MongoClient(self.uri, event_listeners=[CommandTracing(tracer, span_tags=dict(custom='tag'))])
+        client = MongoClient('{0.uri}:{1}'.format(self, port),
+                             event_listeners=[CommandTracing(tracer, span_tags=dict(custom='tag'))])
         return tracer, client
 
     @pytest.fixture
