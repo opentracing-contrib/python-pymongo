@@ -2,6 +2,8 @@
 from opentracing.mocktracer import MockTracer
 from opentracing.ext import tags as ext_tags
 import opentracing
+import pytest
+import mock
 import json
 
 from pymongo_opentracing.tracing import CommandTracing
@@ -28,6 +30,16 @@ class TestCommandTracing(object):
     def test_sources_global_tracer_by_default(self):
         tracing = CommandTracing()
         assert tracing._tracer is opentracing.tracer
+
+    def test_sources_global_tracer_helper_by_default(self):
+        if not hasattr(opentracing, 'global_tracer'):
+            pytest.skip()
+
+        with mock.patch('opentracing.global_tracer') as gt:
+            gt.return_value = True
+            tracing = CommandTracing()
+            assert tracing._tracer is True
+            assert gt.called
 
     def test_sources_span_tags(self):
         assert CommandTracing()._span_tags == {}
