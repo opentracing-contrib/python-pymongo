@@ -11,7 +11,12 @@ class CommandTracing(pymongo.monitoring.CommandListener):
     _scopes = {}
 
     def __init__(self, tracer=None, span_tags=None):
-        self._tracer = tracer or opentracing.tracer
+        try:
+            global_tracer = opentracing.global_tracer()
+        except AttributeError:
+            global_tracer = opentracing.tracer
+
+        self._tracer = tracer or global_tracer
         self._span_tags = span_tags or {}
 
     def started(self, event):
